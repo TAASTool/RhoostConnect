@@ -1,0 +1,48 @@
+{
+  "name": "rhoost-connect",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "db:generate": "prisma generate"
+  },
+  "dependencies": {
+    "next": "14.2.29",
+    "@prisma/client": "5.22.0",
+    "bcryptjs": "^2.4.3",
+    "zod": "^3.23.8",
+    "jsonata": "^2.0.5",
+    "jose": "^5.9.6",
+    "node-schedule": "^2.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@types/react": "^18.3.14",
+    "@types/react-dom": "^18.3.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.9.3",
+    "@types/node-schedule": "^2.1.7",
+    "typescript": "^5.6.3",
+    "tailwindcss": "^3.4.15",
+    "postcss": "^8.4.49",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.29",
+    "prettier": "^3.3.3",
+    "vitest": "^2.1.8",
+    "@vitejs/plugin-react": "^4.3.4",
+    "prisma": "5.22.0",
+    "tsx": "^4.19.2",
+    "@vitest/coverage-v8": "^2.1.8"
+  }
+}

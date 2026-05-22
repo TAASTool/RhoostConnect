@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  plan      String   @default("free")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  users        User[]
+  connectors   Connector[]
+  webhooks     WebhookEndpoint[]
+  workflows    Workflow[]
+  workflowRuns WorkflowRun[]
+  appInstalls  AppInstall[]
+  auditLogs    AuditLog[]
+  apiKeys      ApiKey[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  email        String
+  passwordHash String   @map("password_hash")
+  role         String   @default("Viewer")
+  mfaEnabled   Boolean  @default(false) @map("mfa_enabled")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs AuditLog[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  keyHash   String   @map("key_hash")
+  scopes    String[]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Connector {
+  id                  String   @id @default(cuid())
+  tenantId            String   @map("tenant_id")
+  name                String
+  type                String
+  configEncryptedJson String   @map("config_encrypted_json") @db.Text
+  status              String   @default("active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  endpoints ConnectorEndpoint[]
+
+  @@map("connectors")
+}
+
+model ConnectorEndpoint {
+  id               String  @id @default(cuid())
+  connectorId      String  @map("connector_id")
+  name             String
+  method           String
+  path             String
+  headersJson      String? @map("headers_json") @db.Text
+  bodyTemplateJson String? @map("body_template_json") @db.Text
+  mappingJson      String? @map("mapping_json") @db.Text
+
+  connector Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  @@map("connector_endpoints")
+}
+
+model WebhookEndpoint {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  path            String
+  secretEncrypted String   @map("secret_encrypted") @db.Text
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, path])
+  @@map("webhook_endpoints")
+}
+
+model Workflow {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  name           String
+  definitionJson String   @map("definition_json") @db.Text
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   WorkflowRun[]
+
+  @@map("workflows")
+}
+
+model WorkflowRun {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  workflowId String    @map("workflow_id")
+  status     String
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  errorJson  String?   @map("error_json") @db.Text
+  outputJson String?   @map("output_json") @db.Text
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow Workflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  logs     WorkflowRunLog[]
+
+  @@map("workflow_runs")
+}
+
+model WorkflowRunLog {
+  id       String   @id @default(cuid())
+  runId    String   @map("run_id")
+  ts       DateTime @default(now())
+  level    String
+  message  String
+  metaJson String?  @map("meta_json") @db.Text
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_run_logs")
+}
+
+model AppDefinition {
+  id           String @id @default(cuid())
+  key          String @unique
+  name         String
+  description  String @db.Text
+  version      String
+  manifestJson String @map("manifest_json") @db.Text
+
+  installs AppInstall[]
+
+  @@map("app_definitions")
+}
+
+model AppInstall {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  appDefinitionId String   @map("app_definition_id")
+  status          String   @default("active")
+  installedAt     DateTime @default(now()) @map("installed_at")
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appDefinition AppDefinition @relation(fields: [appDefinitionId], references: [id])
+
+  @@unique([tenantId, appDefinitionId])
+  @@map("app_installs")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  ts          DateTime @default(now())
+  metaJson    String?  @map("meta_json") @db.Text
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorUser User?  @relation(fields: [actorUserId], references: [id])
+
+  @@map("audit_logs")
+}
