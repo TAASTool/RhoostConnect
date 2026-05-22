@@ -1,6 +1,7 @@
 {
   "framework": "nextjs",
   "buildCommand": "npx prisma generate && npx prisma db push --accept-data-loss && node scripts/seed-superadmin.cjs && next build",
+  "installCommand": "npm ci",
   "crons": [
     {
       "path": "/api/cron/schedule",
