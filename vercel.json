@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
   "buildCommand": "npx prisma generate && npx prisma db push --accept-data-loss && node scripts/seed-superadmin.cjs && next build",
-  "installCommand": "npm ci",
+  "installCommand": "npm ci --legacy-peer-deps",
   "crons": [
     {
       "path": "/api/cron/schedule",
