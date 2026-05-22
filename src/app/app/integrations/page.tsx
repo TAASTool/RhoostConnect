@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 
 interface Connector { id: string; name: string; type: string; status: string; endpointCount: number; updatedAt: string; }
-interface AfasConnector { id: string; description: string; type: string; }
-interface TestResult { success: boolean; message: string; connectors?: AfasConnector[]; }
+interface AfasConnector { id: string; description: string; }
+interface TestResult { success: boolean; message: string; detail?: string; getConnectors?: AfasConnector[]; updateConnectors?: AfasConnector[]; }
 
 export default function IntegrationsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -106,11 +106,13 @@ function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  const AFAS_TOKEN_RE = /^<token><version>\d+<\/version><data>[A-Fa-f0-9]+<\/data><\/token>$/;
+
   async function save() {
     setError('');
     if (type === 'afas_adapter') {
-      if (!/^\d{5}$/.test(deelnemersnummer)) { setError('Deelnemersnummer moet 5 cijfers zijn'); return; }
-      if (!afasToken.trim()) { setError('AFAS token is verplicht'); return; }
+      if (!/^\d{5}$/.test(deelnemersnummer)) { setError('Deelnemersnummer moet precies 5 cijfers zijn'); return; }
+      if (!AFAS_TOKEN_RE.test(afasToken.trim())) { setError('Ongeldig token — verwacht: <token><version>1</version><data>...</data></token>'); return; }
     }
     setSaving(true);
     const url = initial ? `/api/connectors/${initial.id}` : '/api/connectors';
@@ -221,55 +223,62 @@ function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClo
   );
 }
 
-function TestResultModal({ result, onClose }: { result: TestResult; onClose: () => void }) {
-  const hasConnectors = result.connectors && result.connectors.length > 0;
+function ConnectorTable({ title, items, color }: { title: string; items: AfasConnector[]; color: 'blue' | 'amber' }) {
+  if (items.length === 0) return null;
+  const badge = color === 'blue' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700';
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badge}`}>{title}</span>
+        <span className="text-xs text-gray-400">{items.length} stuks</span>
+      </div>
+      <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b sticky top-0">
+            <tr>
+              <th className="text-left p-2 font-medium text-gray-600 w-2/5">ID</th>
+              <th className="text-left p-2 font-medium text-gray-600">Omschrijving</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((c, i) => (
+              <tr key={c.id || i} className="border-b last:border-0 hover:bg-gray-50">
+                <td className="p-2 font-mono text-xs">{c.id}</td>
+                <td className="p-2 text-gray-700">{c.description}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
+function TestResultModal({ result, onClose }: { result: TestResult; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-2xl p-6">
+      <div className="card w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Testresultaat</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
 
-        <div className={`flex items-center gap-2 px-4 py-3 rounded-lg mb-4 text-sm font-medium ${result.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-          <span>{result.success ? '✅' : '❌'}</span>
-          <span>{result.message}</span>
+        <div className={`flex items-start gap-2 px-4 py-3 rounded-lg mb-4 text-sm font-medium ${result.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+          <span className="mt-0.5">{result.success ? '✅' : '❌'}</span>
+          <div>
+            <p>{result.message}</p>
+            {result.detail && <p className="font-normal mt-1 opacity-75 text-xs font-mono">{result.detail}</p>}
+          </div>
         </div>
 
-        {hasConnectors && (
+        {result.success && (
           <>
-            <p className="text-sm text-gray-600 mb-3">Beschikbare AFAS connectors:</p>
-            <div className="border rounded-lg overflow-hidden max-h-80 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b sticky top-0">
-                  <tr>
-                    <th className="text-left p-3 font-medium text-gray-600">ID</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Omschrijving</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.connectors!.map((c, i) => (
-                    <tr key={c.id ?? i} className="border-b last:border-0 hover:bg-gray-50">
-                      <td className="p-3 font-mono text-xs">{c.id}</td>
-                      <td className="p-3">{c.description}</td>
-                      <td className="p-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          c.type === 'get' ? 'bg-blue-100 text-blue-700' :
-                          c.type === 'update' ? 'bg-amber-100 text-amber-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>{c.type}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ConnectorTable title="GetConnectors" items={result.getConnectors ?? []} color="blue" />
+            <ConnectorTable title="UpdateConnectors" items={result.updateConnectors ?? []} color="amber" />
           </>
         )}
 
-        <div className="flex justify-end mt-4">
+        <div className="flex justify-end mt-2">
           <button className="btn-primary" onClick={onClose}>Sluiten</button>
         </div>
       </div>
