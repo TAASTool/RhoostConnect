@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/crypto';
 
-// Correct AFAS REST base URLs per environment
-// Source: https://help.afas.nl/help/NL/SE/App_Conect_WebSrv_Addrss.htm
 const AFAS_HOST: Record<string, string> = {
   productie:  'rest.afas.online',
   test:       'resttest.afas.online',
@@ -12,22 +10,26 @@ const AFAS_HOST: Record<string, string> = {
 
 const AFAS_TOKEN_RE = /^<token><version>\d+<\/version><data>[A-Fa-f0-9]+<\/data><\/token>$/;
 
-function afasBaseUrl(deelnemersnummer: string, omgeving: string): string {
-  return `https://${deelnemersnummer}.${AFAS_HOST[omgeving]}/ProfitRestServices`;
+type AfasEntry = { id: string; description: string };
+
+interface AfasMetaInfo {
+  getConnectors?:    AfasEntry[];
+  updateConnectors?: AfasEntry[];
+  customConnectors?: AfasEntry[];
+  info?: { appName?: string; envid?: string; tokenExpiry?: string; group?: string };
 }
 
-function afasAuthHeader(token: string): string {
-  return `AfasToken ${Buffer.from(token).toString('base64')}`;
-}
-
-type AfasConnectorEntry = { id: string; description: string };
-
-function normaliseList(data: unknown): AfasConnectorEntry[] {
-  if (!Array.isArray(data)) return [];
-  return data.map((c: Record<string, unknown>) => ({
-    id:          String(c.id          ?? c.Id          ?? ''),
-    description: String(c.description ?? c.Description ?? ''),
-  }));
+function toEntries(arr: unknown): AfasEntry[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((c: unknown) => {
+      const o = c as Record<string, unknown>;
+      return {
+        id:          String(o.id ?? o.Id ?? ''),
+        description: String(o.description ?? o.Description ?? ''),
+      };
+    })
+    .filter(e => e.id);
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -80,34 +82,38 @@ async function testAfasConnector(config: Record<string, string>) {
     return NextResponse.json({ success: false, message: `Onbekende omgeving: ${omgeving}` });
   }
 
-  const base = afasBaseUrl(deelnemersnummer, omgeving);
-  const auth = afasAuthHeader(afasToken.trim());
-  const headers = { 'Authorization': auth, 'Content-Type': 'application/json' };
-  const timeout = AbortSignal.timeout(15_000);
+  const base = `https://${deelnemersnummer}.${AFAS_HOST[omgeving]}/ProfitRestServices`;
+  const tokenB64 = Buffer.from(afasToken.trim()).toString('base64');
+  const headers = {
+    'Authorization': `AfasToken ${tokenB64}`,
+    'Content-Type': 'application/json',
+  };
 
   try {
-    const [getRes, updateRes] = await Promise.all([
-      fetch(`${base}/metainfo/get`,    { headers, signal: timeout }),
-      fetch(`${base}/metainfo/update`, { headers, signal: timeout }),
-    ]);
+    const res = await fetch(`${base}/MetaInfo`, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(15_000),
+    });
 
-    if (!getRes.ok && !updateRes.ok) {
-      const detail = await getRes.text().catch(() => '');
-      return NextResponse.json({
-        success: false,
-        message: `AFAS gaf HTTP ${getRes.status} terug`,
-        detail,
-      });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      return NextResponse.json({ success: false, message: `AFAS gaf HTTP ${res.status} terug`, detail });
     }
 
-    const getConnectors    = getRes.ok    ? normaliseList(await getRes.json().catch(() => [])) : [];
-    const updateConnectors = updateRes.ok ? normaliseList(await updateRes.json().catch(() => [])) : [];
+    const meta: AfasMetaInfo = await res.json();
+
+    const getConnectors    = toEntries(meta.getConnectors);
+    const updateConnectors = toEntries(meta.updateConnectors);
+    const customConnectors = toEntries(meta.customConnectors);
 
     return NextResponse.json({
       success: true,
-      message: `Verbinding geslaagd — ${getConnectors.length} GetConnector(s), ${updateConnectors.length} UpdateConnector(s)`,
+      message: `Verbinding geslaagd — ${getConnectors.length} Get, ${updateConnectors.length} Update, ${customConnectors.length} Custom connector(s)`,
       getConnectors,
       updateConnectors,
+      customConnectors,
+      info: meta.info ?? null,
     });
   } catch (err) {
     return NextResponse.json({ success: false, message: err instanceof Error ? err.message : 'Verbinding mislukt' });

@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 
 interface Connector { id: string; name: string; type: string; status: string; endpointCount: number; updatedAt: string; }
 interface AfasConnector { id: string; description: string; }
-interface TestResult { success: boolean; message: string; detail?: string; getConnectors?: AfasConnector[]; updateConnectors?: AfasConnector[]; }
+interface AfasInfo { appName?: string; envid?: string; tokenExpiry?: string; group?: string; }
+interface TestResult { success: boolean; message: string; detail?: string; getConnectors?: AfasConnector[]; updateConnectors?: AfasConnector[]; customConnectors?: AfasConnector[]; info?: AfasInfo | null; }
 
 export default function IntegrationsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -273,8 +274,17 @@ function TestResultModal({ result, onClose }: { result: TestResult; onClose: () 
 
         {result.success && (
           <>
-            <ConnectorTable title="GetConnectors" items={result.getConnectors ?? []} color="blue" />
+            {result.info && (
+              <div className="flex flex-wrap gap-3 mb-4 text-xs text-gray-500">
+                {result.info.appName    && <span><strong>App:</strong> {result.info.appName}</span>}
+                {result.info.envid      && <span><strong>Omgeving ID:</strong> {result.info.envid}</span>}
+                {result.info.group      && <span><strong>Groep:</strong> {result.info.group}</span>}
+                {result.info.tokenExpiry && <span><strong>Token vervalt:</strong> {result.info.tokenExpiry}</span>}
+              </div>
+            )}
+            <ConnectorTable title="GetConnectors"    items={result.getConnectors    ?? []} color="blue" />
             <ConnectorTable title="UpdateConnectors" items={result.updateConnectors ?? []} color="amber" />
+            <ConnectorTable title="Custom Connectors" items={result.customConnectors ?? []} color="blue" />
           </>
         )}
 
