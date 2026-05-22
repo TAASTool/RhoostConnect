@@ -20,7 +20,17 @@ const createSchema = z.object({
     }).optional(),
     retries: z.number().int().min(0).max(10).optional(),
     timeoutMs: z.number().int().min(100).max(60000).optional(),
+    // AFAS-specific fields
+    deelnemersnummer: z.string().regex(/^\d{5}$/, 'Must be 5 digits').optional(),
+    omgeving: z.enum(['productie', 'test', 'acceptatie']).optional(),
+    afasToken: z.string().optional(),
   }),
+}).superRefine((data, ctx) => {
+  if (data.type === 'afas_adapter') {
+    if (!data.config.deelnemersnummer) ctx.addIssue({ code: 'custom', path: ['config', 'deelnemersnummer'], message: 'Required for AFAS connector' });
+    if (!data.config.omgeving) ctx.addIssue({ code: 'custom', path: ['config', 'omgeving'], message: 'Required for AFAS connector' });
+    if (!data.config.afasToken) ctx.addIssue({ code: 'custom', path: ['config', 'afasToken'], message: 'Required for AFAS connector' });
+  }
 });
 
 export async function GET(req: NextRequest) {
