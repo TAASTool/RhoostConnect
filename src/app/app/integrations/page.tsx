@@ -96,7 +96,7 @@ export default function IntegrationsPage() {
 
 function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClose: () => void }) {
   const [name, setName] = useState(initial?.name ?? '');
-  const [type, setType] = useState(initial?.type ?? 'http_rest');
+  const [type, setType] = useState(initial?.type ?? 'afas_adapter');
   const [baseUrl, setBaseUrl] = useState('');
   const [authType, setAuthType] = useState('none');
   const [token, setToken] = useState('');
@@ -146,9 +146,9 @@ function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClo
           <div>
             <label className="label">Type</label>
             <select className="input" value={type} onChange={e => setType(e.target.value)}>
+              <option value="afas_adapter">AFAS Adapter</option>
               <option value="http_rest">HTTP REST</option>
               <option value="webhook">Webhook</option>
-              <option value="afas_adapter">AFAS Adapter</option>
             </select>
           </div>
 
