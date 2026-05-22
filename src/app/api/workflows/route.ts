@@ -21,6 +21,7 @@ const createSchema = z.object({
   definition: z.object({
     nodes: z.array(nodeSchema),
     edges: z.array(edgeSchema),
+    automation: z.record(z.unknown()).optional(),
   }),
   enabled: z.boolean().optional().default(true),
 });

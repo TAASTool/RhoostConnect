@@ -2,6 +2,8 @@ import jsonata from 'jsonata';
 import { prisma } from './prisma';
 import { logger } from './logger';
 import { decrypt } from './crypto';
+import { afasBaseUrl, afasHeaders, validateAfasConfig, AfasConfig } from './afas';
+import type { AutomationConfig, FieldMapping, TranslationTable } from './automation-types';
 
 interface WorkflowNode {
   id: string;
@@ -18,6 +20,7 @@ interface WorkflowEdge {
 interface WorkflowDefinition {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  automation?: AutomationConfig;
 }
 
 export async function runWorkflow(
@@ -48,6 +51,13 @@ export async function runWorkflow(
     });
 
     logger.info('Workflow completed', { runId: run.id, workflowId, tenantId });
+
+    // Chained triggers: run any automation whose trigger points at this one.
+    const chainDepth = Number(triggerData._chainDepth ?? 0);
+    if (chainDepth < 5) {
+      await triggerChainedAutomations(workflowId, tenantId, chainDepth + 1);
+    }
+
     return run.id;
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
@@ -61,6 +71,23 @@ export async function runWorkflow(
     });
     logger.error('Workflow failed', { runId: run.id, workflowId, tenantId, error: errMsg });
     throw error;
+  }
+}
+
+async function triggerChainedAutomations(sourceWorkflowId: string, tenantId: string, chainDepth: number): Promise<void> {
+  const candidates = await prisma.workflow.findMany({ where: { tenantId, enabled: true } });
+  for (const wf of candidates) {
+    if (wf.id === sourceWorkflowId) continue;
+    try {
+      const def = JSON.parse(wf.definitionJson) as WorkflowDefinition;
+      const trigger = def.automation?.trigger;
+      if (trigger?.type === 'automation' && trigger.chainedAutomationId === sourceWorkflowId) {
+        logger.info('Chained automation triggered', { source: sourceWorkflowId, target: wf.id });
+        await runWorkflow(wf.id, tenantId, { _chainDepth: chainDepth, _chainedFrom: sourceWorkflowId });
+      }
+    } catch {
+      // ignore malformed definitions
+    }
   }
 }
 
@@ -172,6 +199,11 @@ async function executeNode(
         break;
       }
 
+      case 'action.afas_sync': {
+        output = await runAfasSync(definition.automation, tenantId, runId, Boolean(node.config.dryRun));
+        break;
+      }
+
       default:
         await addRunLog(runId, 'warn', `Unknown node type: ${node.type}`);
         output = {};
@@ -215,4 +247,148 @@ async function addRunLog(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+const AFAS_SYNC_MAX_ROWS = 1000;
+
+// Executes the AFAS sync described by an AutomationConfig:
+// reads source rows, applies mappings + translation tables, and writes each
+// resulting record to the configured AFAS UpdateConnector.
+async function runAfasSync(
+  automation: AutomationConfig | undefined,
+  tenantId: string,
+  runId: string,
+  dryRun: boolean
+): Promise<Record<string, any>> {
+  if (!automation) throw new Error('Geen automation-configuratie gevonden');
+  const { target, sources, mappings, translationTables } = automation;
+  if (!target?.connectorId || !target?.updateConnectorId) throw new Error('Doel (UpdateConnector) ontbreekt');
+
+  const connector = await prisma.connector.findFirst({ where: { id: target.connectorId, tenantId } });
+  if (!connector) throw new Error('AFAS-integratie niet gevonden');
+  const afasConfig = JSON.parse(decrypt(connector.configEncryptedJson)) as AfasConfig;
+  const validationError = validateAfasConfig(afasConfig);
+  if (validationError) throw new Error(`AFAS-configuratie: ${validationError}`);
+
+  // Resolve every source into an array of row objects.
+  const sourceRows: Record<string, Record<string, string>[]> = {};
+  for (const src of sources) {
+    if (src.kind === 'csv') {
+      sourceRows[src.id] = (src.rows ?? []) as Record<string, string>[];
+    } else if (src.kind === 'getconnector' && src.getConnectorId) {
+      const url = `${afasBaseUrl(afasConfig)}/connectors/${encodeURIComponent(src.getConnectorId)}?skip=0&take=${AFAS_SYNC_MAX_ROWS}`;
+      const res = await fetch(url, { headers: afasHeaders(afasConfig), signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) throw new Error(`GetConnector ${src.getConnectorId} gaf HTTP ${res.status}`);
+      const data = await res.json();
+      sourceRows[src.id] = Array.isArray(data?.rows) ? data.rows : [];
+      await addRunLog(runId, 'info', `Bron ${src.name}: ${sourceRows[src.id].length} regel(s) opgehaald`);
+    } else {
+      sourceRows[src.id] = [];
+    }
+  }
+
+  const primary = sources[0];
+  if (!primary) throw new Error('Geen bron geconfigureerd');
+  const driving = sourceRows[primary.id] ?? [];
+  const total = Math.min(driving.length, AFAS_SYNC_MAX_ROWS);
+
+  const tableById = new Map<string, TranslationTable>(translationTables.map((t) => [t.id, t]));
+  const writeUrl = `${afasBaseUrl(afasConfig)}/connectors/${encodeURIComponent(target.updateConnectorId)}`;
+
+  let ok = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (let i = 0; i < total; i++) {
+    const resolved = resolveRow(mappings, sources, sourceRows, i, tableById);
+    const payload = buildAfasPayload(target.updateConnectorId, resolved);
+
+    if (dryRun) { ok++; continue; }
+
+    try {
+      const res = await fetch(writeUrl, {
+        method: 'POST',
+        headers: afasHeaders(afasConfig),
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${detail.slice(0, 200)}`);
+      }
+      ok++;
+    } catch (e) {
+      failed++;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (errors.length < 10) errors.push(`Regel ${i + 1}: ${msg}`);
+      await addRunLog(runId, 'error', `Regel ${i + 1} mislukt: ${msg}`);
+    }
+  }
+
+  await addRunLog(runId, 'info', `AFAS sync klaar — ${ok} ok, ${failed} mislukt${dryRun ? ' (dry-run)' : ''}`);
+  return { total, ok, failed, dryRun, errors };
+}
+
+function resolveRow(
+  mappings: FieldMapping[],
+  sources: AutomationConfig['sources'],
+  sourceRows: Record<string, Record<string, string>[]>,
+  index: number,
+  tableById: Map<string, TranslationTable>
+): Record<string, string> {
+  const resolved: Record<string, string> = {};
+  for (const m of mappings) {
+    if (m.mode === 'none') continue;
+    let value = '';
+    if (m.mode === 'fixed') {
+      value = m.fixedValue ?? '';
+    } else if (m.mode === 'source' && m.sourceId && m.sourceField) {
+      const rows = sourceRows[m.sourceId] ?? [];
+      const row = rows[index] ?? {};
+      value = String(row[m.sourceField] ?? '');
+    }
+    if (m.translationTableId) {
+      const table = tableById.get(m.translationTableId);
+      if (table) {
+        const hit = table.entries.find((e) => e.source === value);
+        if (hit) value = hit.target;
+      }
+    }
+    if (value !== '' || m.required) resolved[m.targetField] = value;
+  }
+  return resolved;
+}
+
+// Reconstructs AFAS's nested Element/Fields/Objects envelope from path-qualified
+// field ids (e.g. "KnSubjectLink/DbId") into the JSON the UpdateConnector expects.
+function buildAfasPayload(connectorId: string, resolved: Record<string, string>): Record<string, any> {
+  const root = { Element: { Fields: {} as Record<string, string>, Objects: [] as any[] } };
+
+  for (const [path, value] of Object.entries(resolved)) {
+    const segs = path.split('/');
+    const fieldId = segs.pop() as string;
+    let node = root;
+    for (const objName of segs) {
+      let existing = node.Element.Objects.find((o) => o[objName]);
+      if (!existing) {
+        existing = { [objName]: { Element: { Fields: {}, Objects: [] } } };
+        node.Element.Objects.push(existing);
+      }
+      node = existing[objName];
+    }
+    node.Element.Fields[fieldId] = value;
+  }
+
+  pruneEmptyObjects(root);
+  return { [connectorId]: root };
+}
+
+function pruneEmptyObjects(node: { Element: { Objects: any[] } }): void {
+  if (!node.Element.Objects.length) {
+    delete (node.Element as { Objects?: any[] }).Objects;
+    return;
+  }
+  for (const wrapper of node.Element.Objects) {
+    for (const key of Object.keys(wrapper)) pruneEmptyObjects(wrapper[key]);
+  }
 }

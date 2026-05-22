@@ -16,7 +16,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  definition: z.object({ nodes: z.array(z.any()), edges: z.array(z.any()) }).optional(),
+  definition: z.object({
+    nodes: z.array(z.any()),
+    edges: z.array(z.any()),
+    automation: z.record(z.unknown()).optional(),
+  }).optional(),
   enabled: z.boolean().optional(),
 });
 

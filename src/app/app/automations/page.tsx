@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import AutomationWizard from './AutomationWizard';
 
 interface Workflow { id: string; name: string; enabled: boolean; runCount: number; updatedAt: string; }
 
@@ -77,7 +78,7 @@ export default function AutomationsPage() {
           </div>
         )
       )}
-      {showCreate && <CreateWorkflowModal onClose={() => { setShowCreate(false); load(); }} />}
+      {showCreate && <AutomationWizard onClose={() => { setShowCreate(false); load(); }} />}
     </div>
   );
 }
@@ -154,41 +155,3 @@ function NodeTypeIcon({ type }: { type: string }) {
   return <span className="text-lg">{icons[type] ?? '●'}</span>;
 }
 
-function CreateWorkflowModal({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState('');
-  const [triggerType, setTriggerType] = useState('trigger.manual');
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    const definition = {
-      nodes: [{ id: 't1', type: triggerType, config: { label: triggerType === 'trigger.schedule' ? 'Every hour' : 'Manual trigger' } }, { id: 'a1', type: 'action.notify', config: { channel: 'ui', message: 'Workflow started', label: 'Notify' } }],
-      edges: [{ from: 't1', to: 'a1' }],
-    };
-    await fetch('/api/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, definition, enabled: false }) });
-    setSaving(false);
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-md p-6">
-        <h2 className="text-lg font-semibold mb-4">New Workflow</h2>
-        <div className="space-y-4">
-          <div><label className="label">Name</label><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="My Workflow" /></div>
-          <div><label className="label">Trigger Type</label>
-            <select className="input" value={triggerType} onChange={e => setTriggerType(e.target.value)}>
-              <option value="trigger.manual">Manual</option>
-              <option value="trigger.schedule">Schedule</option>
-              <option value="trigger.webhook">Webhook</option>
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-3 mt-6 justify-end">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={save} disabled={saving || !name}>{saving ? 'Saving...' : 'Create'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}

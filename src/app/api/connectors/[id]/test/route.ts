@@ -1,35 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/crypto';
-
-const AFAS_HOST: Record<string, string> = {
-  productie:  'rest.afas.online',
-  test:       'resttest.afas.online',
-  acceptatie: 'restaccept.afas.online',
-};
-
-const AFAS_TOKEN_RE = /^<token><version>\d+<\/version><data>[A-Fa-f0-9]+<\/data><\/token>$/;
-
-type AfasEntry = { id: string; description: string };
+import { afasBaseUrl, afasHeaders, validateAfasConfig, toConnectorEntries, AfasConfig } from '@/lib/afas';
 
 interface AfasMetaInfo {
-  getConnectors?:    AfasEntry[];
-  updateConnectors?: AfasEntry[];
-  customConnectors?: AfasEntry[];
+  getConnectors?:    unknown;
+  updateConnectors?: unknown;
+  customConnectors?: unknown;
   info?: { appName?: string; envid?: string; tokenExpiry?: string; group?: string };
-}
-
-function toEntries(arr: unknown): AfasEntry[] {
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .map((c: unknown) => {
-      const o = c as Record<string, unknown>;
-      return {
-        id:          String(o.id ?? o.Id ?? ''),
-        description: String(o.description ?? o.Description ?? ''),
-      };
-    })
-    .filter(e => e.id);
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -45,7 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const config = JSON.parse(decrypt(connector.configEncryptedJson)) as Record<string, unknown>;
 
   if (connector.type === 'afas_adapter') {
-    return testAfasConnector(config as Record<string, string>);
+    return testAfasConnector(config as unknown as AfasConfig);
   }
 
   const baseUrl = typeof config.baseUrl === 'string' ? config.baseUrl : '';
@@ -66,33 +44,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 }
 
-async function testAfasConnector(config: Record<string, string>) {
-  const { deelnemersnummer, omgeving, afasToken } = config;
-
-  if (!deelnemersnummer || !omgeving || !afasToken) {
-    return NextResponse.json({ success: false, message: 'Onvolledige AFAS configuratie' });
-  }
-  if (!/^\d{5}$/.test(deelnemersnummer)) {
-    return NextResponse.json({ success: false, message: 'Ongeldig deelnemersnummer' });
-  }
-  if (!AFAS_TOKEN_RE.test(afasToken.trim())) {
-    return NextResponse.json({ success: false, message: 'Ongeldig token formaat — verwacht: <token><version>1</version><data>...</data></token>' });
-  }
-  if (!AFAS_HOST[omgeving]) {
-    return NextResponse.json({ success: false, message: `Onbekende omgeving: ${omgeving}` });
-  }
-
-  const base = `https://${deelnemersnummer}.${AFAS_HOST[omgeving]}/ProfitRestServices`;
-  const tokenB64 = Buffer.from(afasToken.trim()).toString('base64');
-  const headers = {
-    'Authorization': `AfasToken ${tokenB64}`,
-    'Content-Type': 'application/json',
-  };
+async function testAfasConnector(config: AfasConfig) {
+  const validationError = validateAfasConfig(config);
+  if (validationError) return NextResponse.json({ success: false, message: validationError });
 
   try {
-    const res = await fetch(`${base}/MetaInfo`, {
+    const res = await fetch(`${afasBaseUrl(config)}/MetaInfo`, {
       method: 'GET',
-      headers,
+      headers: afasHeaders(config),
       signal: AbortSignal.timeout(15_000),
     });
 
@@ -102,10 +61,9 @@ async function testAfasConnector(config: Record<string, string>) {
     }
 
     const meta: AfasMetaInfo = await res.json();
-
-    const getConnectors    = toEntries(meta.getConnectors);
-    const updateConnectors = toEntries(meta.updateConnectors);
-    const customConnectors = toEntries(meta.customConnectors);
+    const getConnectors    = toConnectorEntries(meta.getConnectors);
+    const updateConnectors = toConnectorEntries(meta.updateConnectors);
+    const customConnectors = toConnectorEntries(meta.customConnectors);
 
     return NextResponse.json({
       success: true,
