@@ -9,10 +9,13 @@ datasource db {
 }
 
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  plan      String   @default("free")
-  createdAt DateTime @default(now()) @map("created_at")
+  id            String   @id @default(cuid())
+  name          String
+  plan          String   @default("free")
+  contactPerson String?  @map("contact_person")
+  contactEmail  String?  @map("contact_email")
+  phone         String?
+  createdAt     DateTime @default(now()) @map("created_at")
 
   users        User[]
   connectors   Connector[]
@@ -62,6 +65,8 @@ model Connector {
   type                String
   configEncryptedJson String   @map("config_encrypted_json") @db.Text
   status              String   @default("active")
+  visibility          String   @default("tenant")
+  createdByUserId     String?  @map("created_by_user_id")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -102,13 +107,15 @@ model WebhookEndpoint {
 }
 
 model Workflow {
-  id             String   @id @default(cuid())
-  tenantId       String   @map("tenant_id")
-  name           String
-  definitionJson String   @map("definition_json") @db.Text
-  enabled        Boolean  @default(true)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  definitionJson  String   @map("definition_json") @db.Text
+  enabled         Boolean  @default(true)
+  visibility      String   @default("tenant")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   runs   WorkflowRun[]

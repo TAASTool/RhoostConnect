@@ -104,6 +104,7 @@ function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClo
   const [deelnemersnummer, setDeelnemersnummer] = useState('');
   const [omgeving, setOmgeving] = useState('productie');
   const [afasToken, setAfasToken] = useState('');
+  const [visibility, setVisibility] = useState<'tenant' | 'private'>('tenant');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -124,7 +125,7 @@ function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClo
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, type, config }),
+      body: JSON.stringify({ name, type, config, ...(initial ? {} : { visibility }) }),
     });
     setSaving(false);
     if (!res.ok) {
@@ -208,6 +209,22 @@ function ConnectorModal({ initial, onClose }: { initial: Connector | null; onClo
                 </div>
               )}
             </>
+          )}
+
+          {!initial && (
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <label className="text-sm font-medium text-gray-700 block mb-2">Zichtbaarheid</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input type="radio" name="vis" value="tenant" checked={visibility === 'tenant'} onChange={() => setVisibility('tenant')} />
+                  Iedereen in de organisatie
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input type="radio" name="vis" value="private" checked={visibility === 'private'} onChange={() => setVisibility('private')} />
+                  Alleen ikzelf
+                </label>
+              </div>
+            </div>
           )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}

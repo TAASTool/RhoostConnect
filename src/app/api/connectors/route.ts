@@ -8,6 +8,7 @@ import { writeAuditLog } from '@/lib/audit';
 const createSchema = z.object({
   name: z.string().min(1).max(100),
   type: z.enum(['http_rest', 'webhook', 'afas_adapter']),
+  visibility: z.enum(['tenant', 'private']).optional().default('tenant'),
   config: z.object({
     baseUrl: z.string().url().optional().or(z.literal('')),
     auth: z.object({
@@ -35,16 +36,20 @@ const createSchema = z.object({
 
 export async function GET(req: NextRequest) {
   const tenantId = req.headers.get('x-tenant-id');
-  if (!tenantId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = req.headers.get('x-user-id');
+  if (!tenantId || !userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const connectors = await prisma.connector.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      OR: [{ visibility: 'tenant' }, { visibility: 'private', createdByUserId: userId }],
+    },
     include: { endpoints: true },
     orderBy: { createdAt: 'desc' },
   });
 
   return NextResponse.json(connectors.map((c) => ({
-    id: c.id, name: c.name, type: c.type, status: c.status,
+    id: c.id, name: c.name, type: c.type, status: c.status, visibility: c.visibility,
     createdAt: c.createdAt, updatedAt: c.updatedAt,
     endpointCount: c.endpoints.length,
   })));
@@ -62,11 +67,11 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 });
 
-  const { name, type, config } = parsed.data;
+  const { name, type, config, visibility } = parsed.data;
   const configEncryptedJson = encrypt(JSON.stringify(config));
 
   const connector = await prisma.connector.create({
-    data: { tenantId, name, type, configEncryptedJson, status: 'active' },
+    data: { tenantId, name, type, configEncryptedJson, status: 'active', visibility, createdByUserId: userId },
   });
 
   await writeAuditLog({ tenantId, actorUserId: userId, action: 'created', entityType: 'Connector', entityId: connector.id });

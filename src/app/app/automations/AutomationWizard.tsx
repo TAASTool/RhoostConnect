@@ -48,6 +48,7 @@ export default function AutomationWizard({ onClose }: { onClose: () => void }) {
   const [mappings, setMappings] = useState<Record<string, FieldMapping>>({});
   // misc
   const [workflows, setWorkflows] = useState<WorkflowLite[]>([]);
+  const [visibility, setVisibility] = useState<'tenant' | 'private'>('tenant');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -158,7 +159,7 @@ export default function AutomationWizard({ onClose }: { onClose: () => void }) {
     try {
       const r = await fetch('/api/workflows', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, definition, enabled: false }),
+        body: JSON.stringify({ name, definition, enabled: false, visibility }),
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error ?? 'Opslaan mislukt'); }
       onClose();
@@ -335,6 +336,19 @@ export default function AutomationWizard({ onClose }: { onClose: () => void }) {
           {step === 8 && (
             <Section title="Stap 9 — Opslaan" hint="Sla de Automation op. Deze wordt uitgeschakeld opgeslagen — je kunt 'm daarna activeren of handmatig draaien.">
               <SummaryReview config={buildConfig()} name={name} valid={validation.ok} />
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <label className="text-sm font-medium text-gray-700 block mb-2">Zichtbaarheid</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="visibility" value="tenant" checked={visibility === 'tenant'} onChange={() => setVisibility('tenant')} />
+                    <span className="text-sm">Iedereen in de organisatie</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="visibility" value="private" checked={visibility === 'private'} onChange={() => setVisibility('private')} />
+                    <span className="text-sm">Alleen ikzelf</span>
+                  </label>
+                </div>
+              </div>
               {saveError && <p className="text-sm text-red-600 mt-3">{saveError}</p>}
             </Section>
           )}

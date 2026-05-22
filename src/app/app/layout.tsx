@@ -12,6 +12,8 @@ const NAV = [
   { href: '/app/audit', label: 'Audit', icon: '≡' },
 ];
 
+const ADMIN_NAV = { href: '/app/users', label: 'Gebruikers', icon: '👥' };
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -26,6 +28,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   }
+
+  const canManageUsers = user && (user.role === 'Owner' || user.role === 'Admin' || user.role === 'super_admin');
+  const isSuperAdmin = user?.role === 'super_admin';
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -44,6 +49,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {sidebarOpen && <span>{item.label}</span>}
             </Link>
           ))}
+          {canManageUsers && (
+            <Link href={ADMIN_NAV.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                pathname.startsWith(ADMIN_NAV.href) ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+              }`}>
+              <span className="text-lg w-6 text-center flex-shrink-0">{ADMIN_NAV.icon}</span>
+              {sidebarOpen && <span>{ADMIN_NAV.label}</span>}
+            </Link>
+          )}
+          {isSuperAdmin && (
+            <Link href="/admin"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-amber-400 hover:bg-gray-800 hover:text-amber-300 border border-amber-800/40 mt-2">
+              <span className="text-lg w-6 text-center flex-shrink-0">⚡</span>
+              {sidebarOpen && <span>Admin Panel</span>}
+            </Link>
+          )}
         </nav>
         <div className="p-3 border-t border-gray-800">
           {sidebarOpen && user && (
@@ -52,7 +73,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <p className="text-xs text-gray-500">{user.role} · {user.tenantName}</p>
             </div>
           )}
-          <button onClick={logout} className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors`}>
+          <button onClick={logout} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
             <span>⏏</span>{sidebarOpen && 'Logout'}
           </button>
         </div>

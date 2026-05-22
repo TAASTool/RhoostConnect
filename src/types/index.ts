@@ -1,4 +1,5 @@
-export type Role = 'Owner' | 'Admin' | 'Operator' | 'Viewer';
+export type Role = 'super_admin' | 'Owner' | 'Admin' | 'Operator' | 'Viewer';
+export type Visibility = 'tenant' | 'private';
 
 export interface JwtPayload {
   sub: string;

@@ -24,21 +24,26 @@ const createSchema = z.object({
     automation: z.record(z.unknown()).optional(),
   }),
   enabled: z.boolean().optional().default(true),
+  visibility: z.enum(['tenant', 'private']).optional().default('tenant'),
 });
 
 export async function GET(req: NextRequest) {
   const tenantId = req.headers.get('x-tenant-id');
-  if (!tenantId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = req.headers.get('x-user-id');
+  if (!tenantId || !userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const workflows = await prisma.workflow.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      OR: [{ visibility: 'tenant' }, { visibility: 'private', createdByUserId: userId }],
+    },
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { runs: true } } },
   });
 
   return NextResponse.json(workflows.map((w) => ({
-    id: w.id, name: w.name, enabled: w.enabled, createdAt: w.createdAt, updatedAt: w.updatedAt,
-    runCount: w._count.runs,
+    id: w.id, name: w.name, enabled: w.enabled, visibility: w.visibility,
+    createdAt: w.createdAt, updatedAt: w.updatedAt, runCount: w._count.runs,
   })));
 }
 
@@ -54,9 +59,9 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 422 });
 
-  const { name, definition, enabled } = parsed.data;
+  const { name, definition, enabled, visibility } = parsed.data;
   const workflow = await prisma.workflow.create({
-    data: { tenantId, name, definitionJson: JSON.stringify(definition), enabled },
+    data: { tenantId, name, definitionJson: JSON.stringify(definition), enabled, visibility, createdByUserId: userId },
   });
 
   await writeAuditLog({ tenantId, actorUserId: userId, action: 'created', entityType: 'Workflow', entityId: workflow.id });

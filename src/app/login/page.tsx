@@ -23,7 +23,7 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Login failed'); return; }
-      router.push('/app/dashboard');
+      router.push(data.user?.role === 'super_admin' ? '/admin' : '/app/dashboard');
     } catch {
       setError('Network error. Please try again.');
     } finally {
