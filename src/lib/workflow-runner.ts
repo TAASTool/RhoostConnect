@@ -336,6 +336,25 @@ function resolveRow(
   index: number,
   tableById: Map<string, TranslationTable>
 ): Record<string, string> {
+  // Determine the primary join value (from the first source's joinKey column at this index).
+  const primary = sources[0];
+  const primaryRows = primary ? (sourceRows[primary.id] ?? []) : [];
+  const primaryKeyValue = primary?.joinKey
+    ? String(primaryRows[index]?.[primary.joinKey] ?? '')
+    : null;
+
+  // Pre-build a lookup map for each secondary source that has a joinKey.
+  const joinIndex = new Map<string, Map<string, Record<string, string>>>();
+  for (const src of sources.slice(1)) {
+    if (!src.joinKey) continue;
+    const byKey = new Map<string, Record<string, string>>();
+    for (const row of (sourceRows[src.id] ?? [])) {
+      const key = String(row[src.joinKey] ?? '');
+      if (!byKey.has(key)) byKey.set(key, row); // first match wins
+    }
+    joinIndex.set(src.id, byKey);
+  }
+
   const resolved: Record<string, string> = {};
   for (const m of mappings) {
     if (m.mode === 'none') continue;
@@ -343,8 +362,17 @@ function resolveRow(
     if (m.mode === 'fixed') {
       value = m.fixedValue ?? '';
     } else if (m.mode === 'source' && m.sourceId && m.sourceField) {
+      const src = sources.find((s) => s.id === m.sourceId);
       const rows = sourceRows[m.sourceId] ?? [];
-      const row = rows[index] ?? {};
+      let row: Record<string, string>;
+
+      if (src && src.joinKey && primaryKeyValue !== null) {
+        // Join by key: find the matching row in this source.
+        row = joinIndex.get(src.id)?.get(primaryKeyValue) ?? {};
+      } else {
+        // Fallback: positional join by row index.
+        row = rows[index] ?? {};
+      }
       value = String(row[m.sourceField] ?? '');
     }
     if (m.translationTableId) {

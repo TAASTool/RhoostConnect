@@ -279,19 +279,38 @@ export default function AutomationWizard({ onClose }: { onClose: () => void }) {
           )}
 
           {step === 4 && (
-            <Section title="Stap 5 — Voorbeeld" hint="Een voorbeeld van de gegevens uit elke bron.">
+            <Section title="Stap 5 — Voorbeeld" hint={sources.length > 1 ? 'Controleer de gegevens en stel per bron de koppelsleutel in zodat regels correct worden samengevoegd.' : 'Een voorbeeld van de gegevens uit elke bron.'}>
               {sources.length === 0 && <p className="text-sm text-gray-500">Geen bronnen.</p>}
-              {sources.map(src => {
+              {sources.map((src, srcIdx) => {
                 const p = previews[src.id];
+                const cols = p?.columns ?? [];
                 return (
                   <div key={src.id} className="mb-5">
-                    <p className="text-sm font-medium mb-1">{src.name} <span className="text-xs text-gray-400">({src.kind})</span></p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-medium">{src.name} <span className="text-xs text-gray-400">({src.kind})</span></p>
+                      {sources.length > 1 && cols.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-gray-500">{srcIdx === 0 ? 'Primaire sleutel:' : 'Koppelsleutel:'}</label>
+                          <select
+                            className="input text-xs py-0.5 w-44"
+                            value={src.joinKey ?? ''}
+                            onChange={e => setSources(sources.map(s => s.id === src.id ? { ...s, joinKey: e.target.value || undefined } : s))}
+                          >
+                            <option value="">— geen koppeling —</option>
+                            {cols.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                      )}
+                    </div>
                     {!p ? <p className="text-xs text-gray-400">Laden…</p> :
                       p.error ? <p className="text-xs text-red-600">{p.error}</p> :
                       <DataTable columns={p.columns} rows={p.rows} />}
                   </div>
                 );
               })}
+              {sources.length > 1 && sources.some(s => s.joinKey) && !sources.every(s => s.joinKey) && (
+                <p className="text-xs text-amber-600">Tip: stel voor alle bronnen een koppelsleutel in voor een correcte koppeling.</p>
+              )}
             </Section>
           )}
 

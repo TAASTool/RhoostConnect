@@ -35,6 +35,7 @@ export interface SourceConfig {
   getConnectorId?: string; // for getconnector: the AFAS GetConnector id
   columns?: string[];    // known columns (csv, or sampled getconnector)
   rows?: Record<string, string>[]; // csv: full rows stored inline
+  joinKey?: string;      // column used to join this source to the primary source
 }
 
 export interface TranslationTable {
